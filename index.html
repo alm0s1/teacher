@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>استلام ملفات المعلمين</title>
+<style>
+  :root{
+    --bg:#f4f6fb; --card:#fff; --ink:#1b2437; --muted:#6b7590; --brand:#2563eb; --brand-d:#1d4ed8;
+    --line:#e3e8f2; --ok:#16a34a; --bad:#dc2626;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#0f1420; --card:#171e2e; --ink:#e8ecf6; --muted:#97a1ba; --line:#263049; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Segoe UI",Tahoma,"Noto Naskh Arabic",sans-serif;background:var(--bg);color:var(--ink);min-height:100vh}
+  header{background:var(--card);border-bottom:1px solid var(--line);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;position:sticky;top:0;z-index:5}
+  header h1{font-size:18px;margin:0}
+  main{max-width:1100px;margin:0 auto;padding:20px 16px 60px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:18px}
+  .narrow{max-width:520px;margin-left:auto;margin-right:auto}
+  .auth{max-width:420px;margin:50px auto}
+  label{display:block;font-size:14px;margin:12px 0 6px;color:var(--muted)}
+  input[type=text],input[type=email],input[type=password],select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink);font-size:15px;font-family:inherit}
+  button{font-family:inherit;cursor:pointer;border:0;border-radius:10px;padding:11px 18px;font-size:15px;background:var(--brand);color:#fff}
+  button:hover{background:var(--brand-d)}
+  button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+  button.ghost:hover{background:var(--bg)}
+  button.danger{background:var(--bad)}
+  button:disabled{opacity:.55;cursor:not-allowed}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .msg{margin-top:12px;font-size:14px;min-height:20px}
+  .msg.err{color:var(--bad)} .msg.ok{color:var(--ok)}
+  .drop{border:2px dashed var(--line);border-radius:14px;padding:34px 16px;text-align:center;color:var(--muted);cursor:pointer;transition:.15s;margin-top:16px}
+  .drop.over{border-color:var(--brand);background:rgba(37,99,235,.06)}
+  .drop b{color:var(--ink);display:block;font-size:17px;margin-bottom:6px}
+  .queue{margin-top:14px}
+  .q-item{padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .q-top{display:flex;justify-content:space-between;gap:10px}
+  .bar{height:6px;background:var(--line);border-radius:99px;margin-top:8px;overflow:hidden}
+  .bar i{display:block;height:100%;width:0;background:var(--brand);transition:width .2s}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+  .tile{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+  .tile .media{aspect-ratio:4/3;background:#000;display:flex;align-items:center;justify-content:center;color:#888;font-size:13px}
+  .tile img,.tile video{width:100%;height:100%;object-fit:cover;display:block;cursor:pointer}
+  .tile video{object-fit:contain}
+  .tile .info{padding:10px 12px;font-size:13px}
+  .tile .info .n{font-weight:600;font-size:14px;margin-bottom:2px;word-break:break-word}
+  .tile .info .m{color:var(--muted)}
+  .tile .acts{display:flex;gap:8px;padding:0 12px 12px}
+  .tile .acts button{padding:7px 12px;font-size:13px}
+  .empty{text-align:center;color:var(--muted);padding:30px 0}
+  .badge{background:var(--brand);color:#fff;border-radius:99px;font-size:12px;padding:2px 10px}
+  .link{background:none;color:var(--brand);padding:0;font-size:14px}
+  .link:hover{background:none;text-decoration:underline}
+  #lightbox{position:fixed;inset:0;background:rgba(0,0,0,.88);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+  #lightbox img{max-width:100%;max-height:100%;border-radius:8px}
+  .hidden{display:none !important}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📥 استلام ملفات المعلمين</h1>
+  <div class="row">
+    <button class="link hidden" id="goLogin">دخول المعلم الأول</button>
+    <button class="link hidden" id="goUpload">العودة لصفحة الرفع</button>
+    <span id="userName" class="hidden" style="font-size:14px;color:var(--muted)"></span>
+    <button class="ghost hidden" id="logoutBtn">خروج</button>
+  </div>
+</header>
+
+<main>
+
+  <div class="empty" id="loading">جاري التحميل…</div>
+
+  <!-- صفحة الرفع للمعلمين (بدون حساب) -->
+  <section id="teacherView" class="hidden">
+    <div class="card narrow">
+      <h2 style="margin-top:0">رفع صور وفيديوهات للمعلم الأول</h2>
+      <p style="color:var(--muted);margin-top:-6px;font-size:14px">لا تحتاج حساباً. اكتب اسمك ورمز المعلمين ثم اختر الملفات. تصل للمعلم الأول فقط.</p>
+      <label>اسمك</label>
+      <input type="text" id="tName" placeholder="اسم المعلم" maxlength="60">
+      <label>رمز المعلمين</label>
+      <input type="password" id="tCode" dir="ltr" placeholder="الرمز الذي أعطاك إياه المعلم الأول" autocomplete="off">
+      <div class="drop" id="drop">
+        <b>اضغط هنا أو اسحب الملفات وأفلتها</b>
+        صور وفيديوهات (الحد الأقصى لكل ملف 50 ميغابايت)
+      </div>
+      <input type="file" id="fileInput" accept="image/*,video/*" multiple class="hidden">
+      <div class="msg" id="tMsg"></div>
+      <div class="queue" id="queue"></div>
+    </div>
+  </section>
+
+  <!-- دخول المعلم الأول -->
+  <section id="authView" class="card auth hidden">
+    <h2 style="margin-top:0">دخول المعلم الأول</h2>
+    <label>البريد الإلكتروني</label>
+    <input type="email" id="email" dir="ltr" placeholder="name@example.com">
+    <label>كلمة المرور</label>
+    <input type="password" id="password" dir="ltr">
+    <div class="row" style="margin-top:16px">
+      <button id="authBtn">دخول</button>
+    </div>
+    <div class="msg" id="authMsg"></div>
+  </section>
+
+  <!-- واجهة المعلم الأول -->
+  <section id="headView" class="hidden">
+    <div class="card row" style="justify-content:space-between">
+      <div class="row">
+        <h2 style="margin:0">الملفات المستلمة</h2>
+        <span class="badge" id="count">0</span>
+      </div>
+      <div class="row">
+        <select id="filterTeacher" style="width:auto"><option value="">كل المعلمين</option></select>
+        <select id="filterType" style="width:auto">
+          <option value="">صور وفيديوهات</option>
+          <option value="image">الصور فقط</option>
+          <option value="video">الفيديوهات فقط</option>
+        </select>
+      </div>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div class="empty hidden" id="headEmpty">لم يصل أي ملف حتى الآن</div>
+  </section>
+
+  <!-- حساب ليس للمعلم الأول -->
+  <section id="notHeadView" class="card auth hidden">
+    <h2 style="margin-top:0">هذا الحساب ليس حساب المعلم الأول</h2>
+    <p style="color:var(--muted)">لا تملك صلاحية مشاهدة الملفات. سجّل الخروج وادخل بحساب المعلم الأول.</p>
+  </section>
+
+</main>
+
+<div id="lightbox"><img id="lbImg" alt=""></div>
+
+<script type="module">
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+
+/* ============ الإعدادات ============ */
+const SUPABASE_URL = "https://ovjufviqpnznhbrrssms.supabase.co";
+const SUPABASE_KEY = "sb_publishable_Ju-nl2LwLrmN36PIAavChQ_tH4unSRf"; // مفتاح عام (آمن للنشر)
+const MAX_MB       = 50;
+const BUCKET       = "uploads";
+const FN_URL       = SUPABASE_URL + "/functions/v1/teacher-upload";
+/* =================================== */
+
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+const $ = id => document.getElementById(id);
+const show = (el, on) => el.classList.toggle("hidden", !on);
+
+let channel = null;
+let allItems = [];
+let routing = 0;
+let wantLogin = false;
+
+/* ---------- تخزين الاسم والرمز على جهاز المعلم ---------- */
+function lsGet(k){ try { return localStorage.getItem(k) || ""; } catch(_){ return ""; } }
+function lsSet(k,v){ try { localStorage.setItem(k, v); } catch(_){} }
+$("tName").value = lsGet("t_name");
+$("tCode").value = lsGet("t_code");
+
+/* ---------- التنقل بين الصفحات ---------- */
+$("goLogin").onclick = () => { wantLogin = true; route(currentSession); };
+$("goUpload").onclick = () => { wantLogin = false; route(currentSession); };
+$("logoutBtn").onclick = async () => { wantLogin = false; await sb.auth.signOut(); };
+
+let currentSession = null;
+sb.auth.onAuthStateChange((_e, session) => { currentSession = session; setTimeout(() => route(session), 0); });
+sb.auth.getSession().then(({ data }) => { currentSession = data.session; route(data.session); });
+
+async function route(session){
+  const token = ++routing;
+  show($("loading"), false);
+  if (channel){ sb.removeChannel(channel); channel = null; }
+  ["teacherView","authView","headView","notHeadView"].forEach(id => show($(id), false));
+  show($("goLogin"), false); show($("goUpload"), false);
+  show($("userName"), !!session); show($("logoutBtn"), !!session);
+
+  if (!session){
+    if (wantLogin){ show($("authView"), true); show($("goUpload"), true); }
+    else { show($("teacherView"), true); show($("goLogin"), true); }
+    return;
+  }
+  const u = session.user;
+  $("userName").textContent = u.email;
+  const { data } = await sb.from("heads").select("user_id").maybeSingle();
+  if (token !== routing) return;
+  if (data){ show($("headView"), true); startHead(); }
+  else show($("notHeadView"), true);
+}
+
+/* ---------- دخول المعلم الأول ---------- */
+function arErr(e){
+  const m = (e && (e.message || e.error_description || e.error)) || String(e);
+  if (/invalid login credentials/i.test(m)) return "البريد أو كلمة المرور غير صحيحة";
+  if (/email not confirmed/i.test(m)) return "الحساب غير مفعّل، فعّله من لوحة Supabase";
+  if (/rate limit|too many/i.test(m)) return "محاولات كثيرة، حاول بعد قليل";
+  if (/row-level security|violates|not authorized|permission/i.test(m)) return "ليست لديك صلاحية لهذا الإجراء";
+  return "حدث خطأ: " + m;
+}
+$("authBtn").onclick = async () => {
+  const email = $("email").value.trim(), pass = $("password").value;
+  const msg = $("authMsg"); msg.className = "msg"; msg.textContent = "";
+  if (!email || !pass) { msg.className = "msg err"; msg.textContent = "أدخل البريد وكلمة المرور"; return; }
+  $("authBtn").disabled = true;
+  const { error } = await sb.auth.signInWithPassword({ email, password: pass });
+  if (error){ msg.className = "msg err"; msg.textContent = arErr(error); }
+  $("authBtn").disabled = false;
+};
+$("password").addEventListener("keydown", e => { if(e.key==="Enter") $("authBtn").click(); });
+
+/* ---------- المعلم: الرفع بدون حساب ---------- */
+async function callFn(payload){
+  const r = await fetch(FN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "apikey": SUPABASE_KEY },
+    body: JSON.stringify(payload)
+  });
+  let data = {}; try { data = await r.json(); } catch(_){}
+  if (!r.ok) { const e = new Error(data.error || ("http_" + r.status)); e.code = data.error; throw e; }
+  return data;
+}
+function fnErr(e){
+  const c = e && e.code;
+  if (c === "bad_code") return "رمز المعلمين غير صحيح";
+  if (c === "too_large") return "الملف أكبر من " + MAX_MB + " MB";
+  if (c === "bad_type") return "نوع الملف غير مدعوم";
+  if (c === "no_name") return "اكتب اسمك أولاً";
+  return "تعذّر الإرسال، حاول مرة أخرى";
+}
+
+const drop = $("drop"), input = $("fileInput");
+drop.onclick = () => input.click();
+input.onchange = () => { handleFiles(input.files); input.value = ""; };
+["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => handleFiles(e.dataTransfer.files));
+
+function fmtSize(b){ return b > 1048576 ? (b/1048576).toFixed(1)+" MB" : Math.max(1,Math.round(b/1024))+" KB"; }
+
+function handleFiles(files){
+  const name = $("tName").value.trim(), code = $("tCode").value.trim();
+  const msg = $("tMsg"); msg.className = "msg"; msg.textContent = "";
+  if (!name){ msg.className = "msg err"; msg.textContent = "اكتب اسمك أولاً"; return; }
+  if (!code){ msg.className = "msg err"; msg.textContent = "اكتب رمز المعلمين أولاً"; return; }
+  lsSet("t_name", name); lsSet("t_code", code);
+  [...files].forEach(f => uploadOne(f, name, code));
+}
+
+function putSigned(signedUrl, file, onProgress){
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", signedUrl);
+    xhr.setRequestHeader("apikey", SUPABASE_KEY);
+    xhr.setRequestHeader("x-upsert", "false");
+    const fd = new FormData();
+    fd.append("cacheControl", "3600");
+    fd.append("", file);
+    xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100)); };
+    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300) ? resolve() : reject(new Error("upload_" + xhr.status));
+    xhr.onerror = () => reject(new Error("network"));
+    xhr.send(fd);
+  });
+}
+
+async function uploadOne(file, teacherName, code){
+  const row = document.createElement("div"); row.className = "q-item";
+  const top = document.createElement("div"); top.className = "q-top";
+  const nm = document.createElement("span"); nm.textContent = file.name + " (" + fmtSize(file.size) + ")";
+  const st = document.createElement("span");
+  top.append(nm, st);
+  const bar = document.createElement("div"); bar.className = "bar";
+  const fill = document.createElement("i"); bar.append(fill);
+  row.append(top, bar); $("queue").prepend(row);
+  const fail = t => { st.textContent = "❌ " + t; st.style.color = "var(--bad)"; };
+
+  if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) return fail("نوع غير مدعوم");
+  if (file.size > MAX_MB*1048576) return fail("أكبر من " + MAX_MB + " MB");
+
+  try{
+    st.textContent = "…";
+    const init = await callFn({ action: "init", code, name: file.name, type: file.type, size: file.size });
+    await putSigned(init.signedUrl, file, p => { fill.style.width = p + "%"; st.textContent = p + "%"; });
+    await callFn({ action: "complete", code, path: init.path, name: file.name, teacherName });
+    fill.style.width = "100%";
+    st.textContent = "✓ تم الإرسال"; st.style.color = "var(--ok)";
+  }catch(e){ fail(fnErr(e)); }
+}
+
+/* ---------- المعلم الأول: العرض ---------- */
+async function loadAll(){
+  const { data, error } = await sb.from("submissions").select("*").order("created_at", { ascending: false });
+  if (error){ $("grid").innerHTML = ""; $("headEmpty").textContent = arErr(error); show($("headEmpty"), true); return; }
+  allItems = data || [];
+  refreshTeacherFilter();
+  renderGrid();
+}
+function startHead(){
+  loadAll();
+  channel = sb.channel("submissions-feed")
+    .on("postgres_changes", { event: "*", schema: "public", table: "submissions" }, () => loadAll())
+    .subscribe();
+}
+$("filterTeacher").onchange = renderGrid;
+$("filterType").onchange = renderGrid;
+
+function refreshTeacherFilter(){
+  const sel = $("filterTeacher"), cur = sel.value;
+  const names = [...new Set(allItems.map(i => i.teacher_name))].sort();
+  sel.innerHTML = '<option value="">كل المعلمين</option>';
+  names.forEach(n => { const o = document.createElement("option"); o.value = n; o.textContent = n; sel.append(o); });
+  sel.value = names.includes(cur) ? cur : "";
+}
+
+function renderGrid(){
+  const ft = $("filterTeacher").value, fk = $("filterType").value;
+  const items = allItems.filter(i => (!ft || i.teacher_name === ft) && (!fk || i.kind === fk));
+  $("count").textContent = items.length;
+  const grid = $("grid"); grid.innerHTML = "";
+  $("headEmpty").textContent = "لم يصل أي ملف حتى الآن";
+  show($("headEmpty"), items.length === 0);
+  items.forEach(it => grid.append(tile(it)));
+}
+
+function tile(it){
+  const t = document.createElement("div"); t.className = "tile";
+  const media = document.createElement("div"); media.className = "media"; media.textContent = "جاري التحميل…";
+  sb.storage.from(BUCKET).createSignedUrl(it.path, 3600).then(({ data, error }) => {
+    if (error || !data) { media.textContent = "تعذّر تحميل الملف"; return; }
+    const url = data.signedUrl;
+    media.textContent = "";
+    if (it.kind === "video"){
+      const v = document.createElement("video"); v.src = url; v.controls = true; v.preload = "metadata"; media.append(v);
+    } else {
+      const im = document.createElement("img"); im.src = url; im.loading = "lazy";
+      im.onclick = () => { $("lbImg").src = url; $("lightbox").style.display = "flex"; };
+      media.append(im);
+    }
+  });
+
+  const info = document.createElement("div"); info.className = "info";
+  const n = document.createElement("div"); n.className = "n"; n.textContent = it.name;
+  const m = document.createElement("div"); m.className = "m";
+  const date = it.created_at ? new Date(it.created_at).toLocaleString("ar-OM") : "";
+  m.textContent = it.teacher_name + " • " + date;
+  info.append(n, m);
+
+  const acts = document.createElement("div"); acts.className = "acts";
+  const dl = document.createElement("button"); dl.className = "ghost"; dl.textContent = "تحميل";
+  dl.onclick = async () => {
+    const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(it.path, 300, { download: it.name });
+    if (error || !data) return alert(arErr(error || {}));
+    window.open(data.signedUrl, "_blank");
+  };
+  const del = document.createElement("button"); del.className = "danger"; del.textContent = "حذف";
+  del.onclick = async () => {
+    if (!confirm("حذف هذا الملف نهائياً؟")) return;
+    const r1 = await sb.storage.from(BUCKET).remove([it.path]);
+    if (r1.error) return alert(arErr(r1.error));
+    const r2 = await sb.from("submissions").delete().eq("id", it.id);
+    if (r2.error) return alert(arErr(r2.error));
+    loadAll();
+  };
+  acts.append(dl, del);
+  t.append(media, info, acts);
+  return t;
+}
+
+$("lightbox").onclick = () => { $("lightbox").style.display = "none"; $("lbImg").src = ""; };
+</script>
+</body>
+</html>
