@@ -51,6 +51,8 @@
   .tile .acts{display:flex;gap:8px;padding:0 12px 12px}
   .tile .acts button{padding:7px 12px;font-size:13px}
   .empty{text-align:center;color:var(--muted);padding:30px 0}
+  .cat{display:inline-block;font-size:12px;font-weight:600;border-radius:99px;padding:2px 10px;margin-bottom:6px;color:#fff;background:#64748b}
+  .cat.c1{background:#3563c4}.cat.c2{background:#3f8f5c}.cat.c3{background:#d98a2f}.cat.c4{background:#6b4bbd}.cat.c5{background:#c0503f}
   .badge{background:var(--brand);color:#fff;border-radius:99px;font-size:12px;padding:2px 10px}
   .link{background:none;color:var(--brand);padding:0;font-size:14px}
   .link:hover{background:none;text-decoration:underline}
@@ -84,6 +86,15 @@
       <input type="text" id="tName" placeholder="اسم المعلم" maxlength="60">
       <label>رمز المعلمين</label>
       <input type="password" id="tCode" dir="ltr" placeholder="الرمز الذي أعطاك إياه المعلم الأول" autocomplete="off">
+      <label>المحور</label>
+      <select id="tCat">
+        <option value="" selected disabled>اختر المحور…</option>
+        <option value="3.1">3.1 تخطيط المنهاج الدراسي</option>
+        <option value="3.2">3.2 إدارة الصف</option>
+        <option value="3.3">3.3 فاعلية التدريس</option>
+        <option value="3.4">3.4 تعزيز مهارات التعلم</option>
+        <option value="3.5">3.5 التقويم ومساندة التقدم</option>
+      </select>
       <div class="drop" id="drop">
         <b>اضغط هنا أو اسحب الملفات وأفلتها</b>
         صور وفيديوهات (الحد الأقصى لكل ملف 50 ميغابايت)
@@ -115,6 +126,16 @@
         <span class="badge" id="count">0</span>
       </div>
       <div class="row">
+        <button id="dlAll">⬇ تحميل الكل</button>
+        <select id="filterCat" style="width:auto">
+          <option value="">كل المحاور</option>
+          <option value="3.1">3.1 تخطيط المنهاج الدراسي</option>
+          <option value="3.2">3.2 إدارة الصف</option>
+          <option value="3.3">3.3 فاعلية التدريس</option>
+          <option value="3.4">3.4 تعزيز مهارات التعلم</option>
+          <option value="3.5">3.5 التقويم ومساندة التقدم</option>
+          <option value="none">بدون محور</option>
+        </select>
         <select id="filterTeacher" style="width:auto"><option value="">كل المعلمين</option></select>
         <select id="filterType" style="width:auto">
           <option value="">صور وفيديوهات</option>
@@ -122,6 +143,10 @@
           <option value="video">الفيديوهات فقط</option>
         </select>
       </div>
+    </div>
+    <div class="card hidden" id="dlBox" style="padding:14px 20px">
+      <div class="q-top"><span id="dlText"></span><span id="dlPct"></span></div>
+      <div class="bar"><i id="dlFill"></i></div>
     </div>
     <div class="grid" id="grid"></div>
     <div class="empty hidden" id="headEmpty">لم يصل أي ملف حتى الآن</div>
@@ -142,6 +167,8 @@
 const SUPABASE_URL = "https://ovjufviqpnznhbrrssms.supabase.co";
 const SUPABASE_KEY = "sb_publishable_Ju-nl2LwLrmN36PIAavChQ_tH4unSRf"; // مفتاح عام (آمن للنشر)
 const MAX_MB       = 50;
+const CATS = { "3.1":"تخطيط المنهاج الدراسي", "3.2":"إدارة الصف", "3.3":"فاعلية التدريس", "3.4":"تعزيز مهارات التعلم", "3.5":"التقويم ومساندة التقدم" };
+const catLabel = c => CATS[c] ? c + " " + CATS[c] : "بدون محور";
 const BUCKET       = "uploads";
 const FN_URL       = SUPABASE_URL + "/functions/v1/teacher-upload";
 /* =================================== */
@@ -157,6 +184,7 @@ const show = (el, on) => el.classList.toggle("hidden", !on);
 
 let channel = null;
 let allItems = [];
+let shownItems = [];
 let routing = 0;
 let wantLogin = false;
 
@@ -257,6 +285,7 @@ function fnErr(e){
   if (c === "too_large") return "الملف أكبر من " + MAX_MB + " MB";
   if (c === "bad_type") return "نوع الملف غير مدعوم";
   if (c === "no_name") return "اكتب اسمك أولاً";
+  if (c === "bad_category") return "اختر المحور أولاً";
   return "تعذّر الإرسال، حاول مرة أخرى";
 }
 
@@ -274,8 +303,10 @@ function handleFiles(files){
   const msg = $("tMsg"); msg.className = "msg"; msg.textContent = "";
   if (!name){ msg.className = "msg err"; msg.textContent = "اكتب اسمك أولاً"; return; }
   if (!code){ msg.className = "msg err"; msg.textContent = "اكتب رمز المعلمين أولاً"; return; }
+  const cat = $("tCat").value;
+  if (!cat){ msg.className = "msg err"; msg.textContent = "اختر المحور أولاً"; return; }
   lsSet("t_name", name); lsSet("t_code", code);
-  [...files].forEach(f => uploadOne(f, name, code));
+  [...files].forEach(f => uploadOne(f, name, code, cat));
 }
 
 function putSigned(signedUrl, file, onProgress){
@@ -294,10 +325,10 @@ function putSigned(signedUrl, file, onProgress){
   });
 }
 
-async function uploadOne(file, teacherName, code){
+async function uploadOne(file, teacherName, code, category){
   const row = document.createElement("div"); row.className = "q-item";
   const top = document.createElement("div"); top.className = "q-top";
-  const nm = document.createElement("span"); nm.textContent = file.name + " (" + fmtSize(file.size) + ")";
+  const nm = document.createElement("span"); nm.textContent = "[" + category + "] " + file.name + " (" + fmtSize(file.size) + ")";
   const st = document.createElement("span");
   top.append(nm, st);
   const bar = document.createElement("div"); bar.className = "bar";
@@ -310,9 +341,9 @@ async function uploadOne(file, teacherName, code){
 
   try{
     st.textContent = "…";
-    const init = await callFn({ action: "init", code, name: file.name, type: file.type, size: file.size });
+    const init = await callFn({ action: "init", code, category, name: file.name, type: file.type, size: file.size });
     await putSigned(init.signedUrl, file, p => { fill.style.width = p + "%"; st.textContent = p + "%"; });
-    await callFn({ action: "complete", code, path: init.path, name: file.name, teacherName });
+    await callFn({ action: "complete", code, category, path: init.path, name: file.name, teacherName });
     fill.style.width = "100%";
     st.textContent = "✓ تم الإرسال"; st.style.color = "var(--ok)";
   }catch(e){ fail(fnErr(e)); }
@@ -332,6 +363,95 @@ function startHead(){
     .on("postgres_changes", { event: "*", schema: "public", table: "submissions" }, () => loadAll())
     .subscribe();
 }
+const JSZIP_URL = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+const PART_BYTES = 300 * 1024 * 1024; // كل ملف ZIP بحد 300MB حتى لا تمتلئ ذاكرة المتصفح
+let zipBusy = false;
+
+function loadScript(src){
+  return new Promise((res, rej) => {
+    if (window.JSZip) return res();
+    const el = document.createElement("script");
+    el.src = src; el.onload = res; el.onerror = () => rej(new Error("jszip"));
+    document.head.append(el);
+  });
+}
+function cleanName(x){ return String(x || "").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "_").trim() || "file"; }
+function saveBlob(blob, filename){
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+}
+
+$("dlAll").onclick = async () => {
+  if (zipBusy) return;
+  const items = shownItems.slice();
+  if (!items.length) return alert("لا توجد ملفات للتحميل");
+  const total = items.reduce((n, i) => n + (i.size || 0), 0);
+  if (!confirm("سيتم تحميل " + items.length + " ملف (" + fmtSize(total) + ") بملفات ZIP. هل تريد المتابعة؟")) return;
+
+  zipBusy = true; $("dlAll").disabled = true;
+  const box = $("dlBox"), txt = $("dlText"), pct = $("dlPct"), fill = $("dlFill");
+  show(box, true); fill.style.width = "0%"; pct.textContent = ""; txt.textContent = "جاري التجهيز…";
+  try{
+    await loadScript(JSZIP_URL);
+    const { data: urls, error } = await sb.storage.from(BUCKET).createSignedUrls(items.map(i => i.path), 3600);
+    if (error) throw error;
+    const urlOf = {}; (urls || []).forEach(u => { urlOf[u.path] = u.signedUrl; });
+
+    // تقسيم الملفات إلى أجزاء حسب الحجم
+    const parts = []; let cur = [], curSize = 0;
+    items.forEach(it => {
+      const sz = it.size || 0;
+      if (cur.length && curSize + sz > PART_BYTES){ parts.push(cur); cur = []; curSize = 0; }
+      cur.push(it); curSize += sz;
+    });
+    if (cur.length) parts.push(cur);
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    let done = 0, failed = 0;
+    for (let p = 0; p < parts.length; p++){
+      const zip = new window.JSZip();
+      const used = new Set();
+      for (const it of parts[p]){
+        txt.textContent = "جاري تحميل " + (done + 1) + " من " + items.length + " — " + it.name;
+        try{
+          const u = urlOf[it.path];
+          if (!u) throw new Error("no url");
+          const r = await fetch(u);
+          if (!r.ok) throw new Error("http " + r.status);
+          const blob = await r.blob();
+          let path = cleanName(catLabel(it.category)) + "/" + cleanName(it.teacher_name) + "/" + cleanName(it.name);
+          if (used.has(path)){
+            const dot = path.lastIndexOf(".");
+            let n = 2, np;
+            do { np = dot > 0 ? path.slice(0, dot) + " (" + n + ")" + path.slice(dot) : path + " (" + n + ")"; n++; } while (used.has(np));
+            path = np;
+          }
+          used.add(path);
+          zip.file(path, blob, { compression: "STORE" });
+        }catch(_){ failed++; }
+        done++;
+        const pc = Math.round(done / items.length * 100);
+        fill.style.width = pc + "%"; pct.textContent = pc + "%";
+      }
+      txt.textContent = "جاري إنشاء ملف ZIP" + (parts.length > 1 ? " (" + (p + 1) + " من " + parts.length + ")" : "") + "…";
+      const out = await zip.generateAsync({ type: "blob", compression: "STORE" });
+      saveBlob(out, "ملفات-المعلمين-" + stamp + (parts.length > 1 ? "-جزء" + (p + 1) : "") + ".zip");
+      await new Promise(r => setTimeout(r, 800));
+    }
+    txt.textContent = failed ? "اكتمل التحميل. تعذّر تحميل " + failed + " ملف." : "✓ اكتمل التحميل";
+    pct.textContent = "";
+  }catch(e){
+    txt.textContent = "❌ تعذّر التحميل، حاول مرة أخرى";
+    console.error(e);
+  }finally{
+    zipBusy = false; $("dlAll").disabled = false;
+    setTimeout(() => { if (!zipBusy) show($("dlBox"), false); }, 8000);
+  }
+};
+
+$("filterCat").onchange = renderGrid;
 $("filterTeacher").onchange = renderGrid;
 $("filterType").onchange = renderGrid;
 
@@ -344,8 +464,10 @@ function refreshTeacherFilter(){
 }
 
 function renderGrid(){
-  const ft = $("filterTeacher").value, fk = $("filterType").value;
-  const items = allItems.filter(i => (!ft || i.teacher_name === ft) && (!fk || i.kind === fk));
+  const ft = $("filterTeacher").value, fk = $("filterType").value, fc = $("filterCat").value;
+  const items = allItems.filter(i => (!ft || i.teacher_name === ft) && (!fk || i.kind === fk)
+    && (!fc || (fc === "none" ? !i.category : i.category === fc)));
+  shownItems = items;
   $("count").textContent = items.length;
   const grid = $("grid"); grid.innerHTML = "";
   $("headEmpty").textContent = "لم يصل أي ملف حتى الآن";
@@ -370,11 +492,16 @@ function tile(it){
   });
 
   const info = document.createElement("div"); info.className = "info";
+  const cat = document.createElement("div");
+  const cb = document.createElement("span");
+  cb.className = "cat" + (CATS[it.category] ? " c" + it.category.split(".")[1] : "");
+  cb.textContent = catLabel(it.category);
+  cat.append(cb);
   const n = document.createElement("div"); n.className = "n"; n.textContent = it.name;
   const m = document.createElement("div"); m.className = "m";
   const date = it.created_at ? new Date(it.created_at).toLocaleString("ar-OM") : "";
   m.textContent = it.teacher_name + " • " + date;
-  info.append(n, m);
+  info.append(cat, n, m);
 
   const acts = document.createElement("div"); acts.className = "acts";
   const dl = document.createElement("button"); dl.className = "ghost"; dl.textContent = "تحميل";
