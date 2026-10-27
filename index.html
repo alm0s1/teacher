@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>استلام ملفات المعلمين</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <style>
   :root{
     --bg:#f4f6fb; --card:#fff; --ink:#1b2437; --muted:#6b7590; --brand:#2563eb; --brand-d:#1d4ed8;
@@ -63,7 +64,7 @@
 <header>
   <h1>📥 استلام ملفات المعلمين</h1>
   <div class="row">
-    <button class="link hidden" id="goLogin">دخول المعلم الأول</button>
+    <button class="link" id="goLogin">دخول المعلم الأول</button>
     <button class="link hidden" id="goUpload">العودة لصفحة الرفع</button>
     <span id="userName" class="hidden" style="font-size:14px;color:var(--muted)"></span>
     <button class="ghost hidden" id="logoutBtn">خروج</button>
@@ -72,10 +73,10 @@
 
 <main>
 
-  <div class="empty" id="loading">جاري التحميل…</div>
+  <div class="empty hidden" id="loading">جاري التحميل…</div>
 
   <!-- صفحة الرفع للمعلمين (بدون حساب) -->
-  <section id="teacherView" class="hidden">
+  <section id="teacherView">
     <div class="card narrow">
       <h2 style="margin-top:0">رفع صور وفيديوهات للمعلم الأول</h2>
       <p style="color:var(--muted);margin-top:-6px;font-size:14px">لا تحتاج حساباً. اكتب اسمك ورمز المعلمين ثم اختر الملفات. تصل للمعلم الأول فقط.</p>
@@ -137,8 +138,6 @@
 <div id="lightbox"><img id="lbImg" alt=""></div>
 
 <script type="module">
-import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-
 /* ============ الإعدادات ============ */
 const SUPABASE_URL = "https://ovjufviqpnznhbrrssms.supabase.co";
 const SUPABASE_KEY = "sb_publishable_Ju-nl2LwLrmN36PIAavChQ_tH4unSRf"; // مفتاح عام (آمن للنشر)
@@ -147,7 +146,12 @@ const BUCKET       = "uploads";
 const FN_URL       = SUPABASE_URL + "/functions/v1/teacher-upload";
 /* =================================== */
 
-const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+const SDK_URL = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+let sb = null, sbPromise = null;
+function loadSb(){
+  if (!sbPromise) sbPromise = import(SDK_URL).then(m => { sb = m.createClient(SUPABASE_URL, SUPABASE_KEY); return sb; });
+  return sbPromise;
+}
 const $ = id => document.getElementById(id);
 const show = (el, on) => el.classList.toggle("hidden", !on);
 
@@ -163,13 +167,36 @@ $("tName").value = lsGet("t_name");
 $("tCode").value = lsGet("t_code");
 
 /* ---------- التنقل بين الصفحات ---------- */
-$("goLogin").onclick = () => { wantLogin = true; route(currentSession); };
+$("goLogin").onclick = () => { wantLogin = true; route(currentSession); initAuth(); };
 $("goUpload").onclick = () => { wantLogin = false; route(currentSession); };
-$("logoutBtn").onclick = async () => { wantLogin = false; await sb.auth.signOut(); };
+$("logoutBtn").onclick = async () => { wantLogin = false; await loadSb(); await sb.auth.signOut(); };
 
 let currentSession = null;
-sb.auth.onAuthStateChange((_e, session) => { currentSession = session; setTimeout(() => route(session), 0); });
-sb.auth.getSession().then(({ data }) => { currentSession = data.session; route(data.session); });
+let authInit = false;
+async function initAuth(){
+  if (authInit) return;
+  authInit = true;
+  await loadSb();
+  sb.auth.onAuthStateChange((_e, session) => { currentSession = session; setTimeout(() => route(session), 0); });
+  const { data } = await sb.auth.getSession();
+  currentSession = data.session;
+  route(data.session);
+}
+function hasStoredSession(){
+  try {
+    for (let i = 0; i < localStorage.length; i++){
+      if (/^sb-.*-auth-token$/.test(localStorage.key(i) || "")) return true;
+    }
+  } catch(_){}
+  return false;
+}
+// المعلم العادي: تظهر صفحة الرفع فوراً. المعلم الأول (له جلسة محفوظة): نحمّل المكتبة ونفتح ملفاته.
+if (hasStoredSession()){
+  show($("teacherView"), false);
+  show($("goLogin"), false);
+  show($("loading"), true);
+  initAuth();
+}
 
 async function route(session){
   const token = ++routing;
@@ -206,6 +233,7 @@ $("authBtn").onclick = async () => {
   const msg = $("authMsg"); msg.className = "msg"; msg.textContent = "";
   if (!email || !pass) { msg.className = "msg err"; msg.textContent = "أدخل البريد وكلمة المرور"; return; }
   $("authBtn").disabled = true;
+  try { await loadSb(); } catch(_){ msg.className = "msg err"; msg.textContent = "تعذّر تحميل الصفحة، تحقق من الإنترنت"; $("authBtn").disabled = false; return; }
   const { error } = await sb.auth.signInWithPassword({ email, password: pass });
   if (error){ msg.className = "msg err"; msg.textContent = arErr(error); }
   $("authBtn").disabled = false;
